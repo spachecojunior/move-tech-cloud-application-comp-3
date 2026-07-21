@@ -1,0 +1,32 @@
+name: CI/CD - build, push e deploy
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do código
+        uses: actions/checkout@v4
+
+      - name: Login no Registry da Magalu Cloud
+        run: echo "${{ secrets.REGISTRY_PASSWORD }}" | docker login ${{ secrets.REGISTRY_SERVER }} -u "${{ secrets.REGISTRY_USER }}" --password-stdin
+
+      - name: Build da imagem
+        run: docker build -t ${{ secrets.REGISTRY_SERVER }}/api-pedidos/pedidos-api:${{ github.sha }} .
+
+      - name: Push para o Registry
+        run: docker push ${{ secrets.REGISTRY_SERVER }}/api-pedidos/pedidos-api:${{ github.sha }}
+
+      - name: Configurar o kubectl
+        run: |
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > kubeconfig.yaml
+          echo "KUBECONFIG=$PWD/kubeconfig.yaml" >> $GITHUB_ENV
+
+      - name: Deploy no K3s
+        run: |
+          kubectl set image deployment/pedidos-api \
+            pedidos-api=${{ secrets.REGISTRY_SERVER }}/api-pedidos/pedidos-api:${{ github.sha }}
+          kubectl rollout status deployment/pedidos-api
